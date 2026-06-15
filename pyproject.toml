@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "greevils-cli"
+version = "0.1.0"
+description = "Participant CLI for the Greevils confidential trading-agent competition"
+requires-python = ">=3.10"
+dependencies = [
+    "requests",
+    "cryptography",
+]
+
+[project.scripts]
+# Installs a real `greevils` command on PATH (no alias needed): `pip install -e .`
+greevils = "greevils_cli.cli:main"
+
+[tool.setuptools]
+packages = ["greevils_cli"]
