@@ -48,13 +48,13 @@ When `PUBLISHED`, `status` shows the `image_ref` and `image_digest` (D).
 ```bash
 greevils deploy a1b2c3d4 \
   --agent-key "$AGENT_KEY" \
-  --withdrawal-address 0xYourEOA \
+  --master-account 0xYourEOA \
   --project your-gcp-project --zone us-central1-a
 ```
 `deploy` resolves `image_ref`/`digest` from the submission id, then launches a Confidential
-Space TDX VM running that exact image, passing `AGENT_KEY` + `WITHDRAWAL_ADDRESS` as
+Space TDX VM running that exact image, passing `AGENT_KEY` + `MASTER_ACCOUNT` as
 `tee-env-*`. It prints the VM's external IP (give it + the digest to the organizer/verifier).
-`AGENT_KEY` / `WITHDRAWAL_ADDRESS` also read from `$AGENT_KEY` / `$WITHDRAWAL_ADDRESS`.
+`AGENT_KEY` / `MASTER_ACCOUNT` also read from `$AGENT_KEY` / `$MASTER_ACCOUNT`.
 
 When you deploy by `<id>`, the CLI also **reports the VM's public IP back to the API**, which
 marks the submission `DEPLOYED` (visible in `list`/`status`). The report is authenticated with

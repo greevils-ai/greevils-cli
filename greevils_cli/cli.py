@@ -5,7 +5,7 @@
   greevils submit agent.py.enc --name my-agent     # upload ciphertext to greevils-api
   greevils list                                    # all submissions (spot your own by name)
   greevils status <id>                             # one submission's status + image digest
-  greevils deploy <id> --agent-key K --withdrawal-address 0x...   # launch the CS TDX VM
+  greevils deploy <id> --agent-key K --master-account 0x...   # launch the CS TDX VM
 
 encrypt + deploy are fully local (the API never sees plaintext or your key). submit/list/
 status just talk to the greevils-api backend (--api or GREEVILS_API, default https://api.greevils.ai).
@@ -170,7 +170,7 @@ def cmd_deploy(args: argparse.Namespace) -> None:
         image_ref=image_ref,
         image_digest=image_digest,
         agent_key=args.agent_key or os.environ.get("AGENT_KEY", ""),
-        withdrawal_address=args.withdrawal_address or os.environ.get("WITHDRAWAL_ADDRESS", ""),
+        master_account=args.master_account or os.environ.get("MASTER_ACCOUNT", ""),
         project=args.project,
         zone=args.zone,
         vm_name=args.vm_name,
@@ -233,7 +233,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--image-ref", help="override: image ref (instead of resolving from <id>)")
     p.add_argument("--digest", help="override: image digest (instead of resolving from <id>)")
     p.add_argument("--agent-key", help="AGENT_KEY (default: $AGENT_KEY)")
-    p.add_argument("--withdrawal-address", help="0x... where funds return (default: $WITHDRAWAL_ADDRESS)")
+    p.add_argument("--master-account", help="0x... where funds return (default: $MASTER_ACCOUNT)")
     p.add_argument("--token", help="submission token for IP report (default: $GREEVILS_TOKEN or local store)")
     p.add_argument("--project", default=os.environ.get("GREEVILS_GCP_PROJECT", "calcium-arcadia-464813-j4"),
                    help="your GCP project (where the VM runs)")

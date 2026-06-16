@@ -3,7 +3,7 @@ Confidential Space TDX VM.
 
 The image is content-addressed, so deploying `image_ref@image_digest` cannot alter what
 runs: swap the image and the attested digest changes. AGENT_KEY (decrypts the agent inside
-the TEE) and WITHDRAWAL_ADDRESS (where funds are swept on wind-down, and the account that
+the TEE) and MASTER_ACCOUNT (where funds are swept on wind-down, and the account that
 authorizes the privileged API) travel only in the participant's own VM metadata as
 tee-env-* values the image allow-lists.
 """
@@ -31,7 +31,7 @@ def deploy(
     image_ref: str,
     image_digest: str,
     agent_key: str,
-    withdrawal_address: str,
+    master_account: str,
     project: str,
     zone: str,
     vm_name: str,
@@ -43,8 +43,8 @@ def deploy(
 ) -> str:
     if not agent_key:
         raise SystemExit("AGENT_KEY required (--agent-key or AGENT_KEY env)")
-    if not withdrawal_address:
-        raise SystemExit("WITHDRAWAL_ADDRESS required (--withdrawal-address or WITHDRAWAL_ADDRESS env)")
+    if not master_account:
+        raise SystemExit("MASTER_ACCOUNT required (--master-account or MASTER_ACCOUNT env)")
     if token_backend == "ita" and not ita_api_key:
         raise SystemExit("ITA_API_KEY required for --token-backend ita (or use google)")
 
@@ -79,7 +79,7 @@ def deploy(
         "~tee-container-log-redirect=true"
         f"~tee-env-CS_TOKEN_BACKEND={token_backend}"
         f"~tee-env-AGENT_KEY={agent_key}"
-        f"~tee-env-WITHDRAWAL_ADDRESS={withdrawal_address}"
+        f"~tee-env-MASTER_ACCOUNT={master_account}"
     )
     if token_backend == "ita":
         metadata += f"~ita-api-key={ita_api_key}~ita-region={ita_region}"
