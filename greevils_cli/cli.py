@@ -156,15 +156,18 @@ def _report_ip(api: str, sid: str, ip: str, token: str | None) -> None:
 
 def cmd_deploy(args: argparse.Namespace) -> None:
     image_ref, image_digest = args.image_ref, args.digest
-    # Resolve image_ref/digest from a published submission unless given explicitly.
+    # Resolve image_ref/digest from a published submission unless given explicitly. PUBLISHED is
+    # the first deploy; STALE means a prior deployment stopped answering, so re-deploying it (a
+    # fresh VM from the same image) is allowed too.
     if args.id:
         r = requests.get(f"{args.api}/submissions/{args.id}", timeout=30)
         if r.status_code == 404:
             raise SystemExit(f"no such submission: {args.id}")
         r.raise_for_status()
         s = r.json()
-        if s["status"] != "PUBLISHED":
-            raise SystemExit(f"submission {args.id} is {s['status']}, not PUBLISHED -- can't deploy yet")
+        if s["status"] not in ("PUBLISHED", "STALE"):
+            raise SystemExit(f"submission {args.id} is {s['status']} -- can only deploy a "
+                             f"PUBLISHED submission or re-deploy a STALE one")
         image_ref = image_ref or s["image_ref"]
         image_digest = image_digest or s["image_digest"]
     if not image_ref or not image_digest:
