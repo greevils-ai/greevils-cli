@@ -56,6 +56,13 @@ def _resolve_token(explicit: str | None, sid: str) -> str | None:
 
 # ---- commands -------------------------------------------------------------
 
+def _short_ts(iso: str | None) -> str:
+    """Trim an ISO timestamp to 'YYYY-MM-DD HH:MM:SS' for table display; '-' if unset."""
+    if not iso:
+        return "-"
+    return iso[:19].replace("T", " ")
+
+
 def cmd_encrypt(args: argparse.Namespace) -> None:
     plaintext = Path(args.agent).read_bytes()
     token, key = encrypt_agent(plaintext, args.key)
@@ -85,10 +92,12 @@ def cmd_list(args: argparse.Namespace) -> None:
     if not rows:
         print("no submissions")
         return
-    print(f"{'ID':<10} {'STATUS':<16} {'NAME':<20} {'IP':<16} DIGEST")
+    print(f"{'ID':<10} {'STATUS':<16} {'HEALTH':<10} {'ATTEST':<8} {'CHECKED':<20} "
+          f"{'NAME':<20} {'IP':<16} DIGEST")
     for s in rows:
-        print(f"{s['id']:<10} {s['status']:<16} {s['name'][:20]:<20} "
-              f"{(s.get('public_ip') or '-'):<16} {s.get('image_digest') or '-'}")
+        print(f"{s['id']:<10} {s['status']:<16} {(s.get('health') or '-'):<10} "
+              f"{(s.get('attestation') or '-'):<8} {_short_ts(s.get('health_checked_at')):<20} "
+              f"{s['name'][:20]:<20} {(s.get('public_ip') or '-'):<16} {s.get('image_digest') or '-'}")
 
 
 def cmd_status(args: argparse.Namespace) -> None:
@@ -100,11 +109,28 @@ def cmd_status(args: argparse.Namespace) -> None:
     print(f"id:            {s['id']}")
     print(f"name:          {s['name']}")
     print(f"status:        {s['status']}")
+    print(f"health:        {s.get('health') or '-'}"
+          + (f"  (checked {s['health_checked_at']})" if s.get('health_checked_at') else ""))
+    att = s.get("attestation") or "-"
+    att_extras = []
+    if s.get("attestation_checked_at"):
+        att_extras.append(f"checked {s['attestation_checked_at']}")
+    if s.get("attestation_nonce"):
+        att_extras.append(f"nonce {s['attestation_nonce']}")
+    print(f"attestation:   {att}" + (f"  ({', '.join(att_extras)})" if att_extras else ""))
+    detail = s.get("attestation_detail") or {}
+    if isinstance(detail, dict) and detail.get("error"):
+        print(f"               error: {detail['error']}")
     print(f"image_ref:     {s.get('image_ref') or '-'}")
     print(f"image_digest:  {s.get('image_digest') or '-'}")
     print(f"public_ip:     {s.get('public_ip') or '-'}")
     if s.get("error"):
         print(f"error:         {s['error']}")
+    if args.log and isinstance(detail, dict) and detail.get("checks"):
+        print("---- attestation checks ----")
+        for c in detail["checks"]:
+            mark = "PASS" if c.get("ok") else "FAIL"
+            print(f"  [{mark}] {c.get('check')}: actual={c.get('actual')!r} expected={c.get('expected')!r}")
     if args.log and s.get("log"):
         print("---- build log ----")
         print(s["log"])
@@ -196,7 +222,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("status", help="show one submission's status + image digest")
     p.add_argument("id", help="submission id")
-    p.add_argument("--log", action="store_true", help="also print the build log")
+    p.add_argument("--log", action="store_true",
+                   help="also print the per-claim attestation checks and the build log")
     add_api(p)
     p.set_defaults(func=cmd_status)
 
