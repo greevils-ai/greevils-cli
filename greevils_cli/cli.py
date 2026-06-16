@@ -8,7 +8,7 @@
   greevils deploy <id> --agent-key K --withdrawal-address 0x...   # launch the CS TDX VM
 
 encrypt + deploy are fully local (the API never sees plaintext or your key). submit/list/
-status just talk to the greevils-api backend (--api or GREEVILS_API, default localhost:8000).
+status just talk to the greevils-api backend (--api or GREEVILS_API, default https://api.greevils.ai).
 """
 import argparse
 import json
@@ -21,7 +21,7 @@ import requests
 from .crypto import encrypt_agent
 from .deploy import deploy
 
-DEFAULT_API = os.environ.get("GREEVILS_API", "http://localhost:8000")
+DEFAULT_API = os.environ.get("GREEVILS_API", "https://api.greevils.ai")
 
 # Per-submission write tokens live here, keyed by submission id. Saved on `submit`, used
 # automatically by `deploy`. Override the dir with GREEVILS_HOME.
