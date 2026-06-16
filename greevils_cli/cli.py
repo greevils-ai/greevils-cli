@@ -93,11 +93,13 @@ def cmd_list(args: argparse.Namespace) -> None:
         print("no submissions")
         return
     print(f"{'ID':<10} {'STATUS':<16} {'HEALTH':<10} {'ATTEST':<8} {'CHECKED':<20} "
-          f"{'NAME':<20} {'IP':<16} DIGEST")
+          f"{'NAME':<20} {'IP':<16} {'AGENT ACCOUNT':<44} {'MASTER ACCOUNT':<44} DIGEST")
     for s in rows:
         print(f"{s['id']:<10} {s['status']:<16} {(s.get('health') or '-'):<10} "
               f"{(s.get('attestation') or '-'):<8} {_short_ts(s.get('health_checked_at')):<20} "
-              f"{s['name'][:20]:<20} {(s.get('public_ip') or '-'):<16} {s.get('image_digest') or '-'}")
+              f"{s['name'][:20]:<20} {(s.get('public_ip') or '-'):<16} "
+              f"{(s.get('agent_address') or '-'):<44} {(s.get('master_account') or '-'):<44} "
+              f"{s.get('image_digest') or '-'}")
 
 
 def cmd_status(args: argparse.Namespace) -> None:
@@ -124,6 +126,8 @@ def cmd_status(args: argparse.Namespace) -> None:
     print(f"image_ref:     {s.get('image_ref') or '-'}")
     print(f"image_digest:  {s.get('image_digest') or '-'}")
     print(f"public_ip:     {s.get('public_ip') or '-'}")
+    print(f"agent_account: {s.get('agent_address') or '-'}")
+    print(f"master_account:{s.get('master_account') or '-'}")
     if s.get("error"):
         print(f"error:         {s['error']}")
     if args.log and isinstance(detail, dict) and detail.get("checks"):
