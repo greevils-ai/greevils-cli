@@ -77,16 +77,19 @@ the resulting address + signature to the CLI to commit it (the CLI never sees yo
 
 ```bash
 greevils commit --netuid 1 --coldkey my-wallet --hotkey my-hotkey \
-  --hl-address 0xACCT --signature 0xSIG [--message "..."]
+  --hl-address 0xACCT --signature 0xSIG
 ```
 
-The commitment is a tiny JSON blob `{"hl_address","message","signature"}` written via
-Bittensor's `set_commitment`. `signature` is an EIP-191 `personal_sign` over `message` by the
-Hyperliquid account's key; the validator recovers the signer and checks it equals
-`hl_address`. The message also embeds your **hotkey**, so nobody can copy your commitment and
-claim the same account as theirs. Use `--dry-run` to build + self-verify the
-commitment and print it without writing on-chain. That's the miner's whole job — once
-committed, the validator evaluates you every round.
+The on-chain commitment is the compact blob `base64(hl_address(20B) ‖ signature(65B))`
+(116 chars) written via Bittensor's `set_commitment` — the Raw commitment field is capped at
+128 bytes, so the signed message itself is **not** stored. `signature` is an EIP-191
+`personal_sign` over the *canonical message* (`Greevils Hyperliquid ownership claim` + your
+hotkey + the account address) by the Hyperliquid account's key. The validator rebuilds that
+message from your committing **hotkey** + the embedded address and checks the signature
+recovers to the address — so nobody can copy your blob and claim the same account (it would
+rebuild under their hotkey and fail). Use `--dry-run` to build + self-verify the commitment
+and print it without writing on-chain. That's the miner's whole job — once committed, the
+validator evaluates you every round.
 
 > `commit` talks to the **subtensor chain**, not the greevils-api. It needs the `bittensor`
 > packages (already in this CLI's dependencies).

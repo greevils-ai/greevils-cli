@@ -220,22 +220,22 @@ def cmd_commit(args: argparse.Namespace) -> None:
     wallet = bt.Wallet(name=args.wallet_name, hotkey=args.hotkey)
     hotkey_ss58 = wallet.hotkey.ss58_address
 
-    # Build the {address, message, signature} triple from the signature the miner produced
-    # in the web UI (we never handle the Hyperliquid account key).
+    # The miner produces the signature in the web UI (we never handle the Hyperliquid account
+    # key). The signed message is the canonical message, rebuilt here from (hotkey, address) --
+    # it is not stored on-chain, so the validator rebuilds it the same way.
     if not (args.hl_address and args.signature):
         raise SystemExit(
             "provide both --hl-address and --signature (the signature you produced in the web UI)"
         )
     hl_address = args.hl_address
-    message = args.message or commitlib.canonical_message(hotkey_ss58, hl_address)
     signature = commitlib._normalize_sig_hex(args.signature)
 
     # Self-verify exactly as the validator will, before paying for the extrinsic.
-    ok, reason = commitlib.verify_commitment(hotkey_ss58, hl_address, message, signature)
+    ok, reason = commitlib.verify_commitment(hotkey_ss58, hl_address, signature)
     if not ok:
         raise SystemExit(f"refusing to commit -- {reason}")
 
-    data = commitlib.encode_commitment(hl_address, message, signature)
+    data = commitlib.encode_commitment(hl_address, signature)
     print(f"hotkey:        {hotkey_ss58}")
     print(f"hl_address:    {hl_address}")
     print(f"commitment:    {data}  ({len(data.encode())} bytes)")
@@ -319,8 +319,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--hotkey", default=os.environ.get("HOTKEY_NAME", "default"),
                    help="hotkey name -- must be the neuron registered on the subnet (default 'default')")
     p.add_argument("--hl-address", help="claimed Hyperliquid account address")
-    p.add_argument("--signature", help="EIP-191 personal_sign signature over --message (hex)")
-    p.add_argument("--message", help="message that was signed (default: the canonical message we build)")
+    p.add_argument("--signature", help="EIP-191 personal_sign signature over the canonical message (hex)")
     p.add_argument("--dry-run", action="store_true",
                    help="build + self-verify the commitment and print it, without writing on-chain")
     p.set_defaults(func=cmd_commit)
