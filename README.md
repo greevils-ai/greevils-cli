@@ -66,6 +66,31 @@ prints a `curl` you can run to report the IP yourself.
 > ref + digest, and to report the IP afterward). You can skip the API entirely with
 > `greevils deploy --image-ref ... --digest ...` (no IP is reported in that case).
 
+### 5. Claim your Hyperliquid account on-chain (subnet miners)
+
+To be scored by the subnet validator, register your neuron on the subnet, then publish a
+one-time on-chain **ownership commitment** that proves you control a Hyperliquid account
+(either a greevil **agent** account or a **normal** trading account):
+
+Sign the canonical message in the Greevils web UI with your Hyperliquid account, then pass
+the resulting address + signature to the CLI to commit it (the CLI never sees your key):
+
+```bash
+greevils commit --netuid 1 --coldkey my-wallet --hotkey my-hotkey \
+  --hl-address 0xACCT --signature 0xSIG [--message "..."]
+```
+
+The commitment is a tiny JSON blob `{"hl_address","message","signature"}` written via
+Bittensor's `set_commitment`. `signature` is an EIP-191 `personal_sign` over `message` by the
+Hyperliquid account's key; the validator recovers the signer and checks it equals
+`hl_address`. The message also embeds your **hotkey**, so nobody can copy your commitment and
+claim the same account as theirs. Use `--dry-run` to build + self-verify the
+commitment and print it without writing on-chain. That's the miner's whole job — once
+committed, the validator evaluates you every round.
+
+> `commit` talks to the **subtensor chain**, not the greevils-api. It needs the `bittensor`
+> packages (already in this CLI's dependencies).
+
 ## Commands
 | Command | What it does | Talks to API? |
 |---|---|---|
@@ -74,6 +99,7 @@ prints a `curl` you can run to report the IP yourself.
 | `list` | list all submissions | yes |
 | `status <id> [--log]` | one submission's status + digest + IP | yes |
 | `deploy <id> …` | launch the CS TDX VM at the published digest, then report its IP | resolve digest + report IP |
+| `commit …` | claim a Hyperliquid account on-chain (the miner's job) | no (subtensor chain) |
 
 ## Layout
 ```
@@ -81,4 +107,5 @@ pyproject.toml          packaging + the `greevils` console-script entry point
 greevils_cli/cli.py     argparse commands (encrypt/submit/list/status/deploy) + main()
 greevils_cli/crypto.py  agent encryption (Fernet) — same scheme the TEE harness decrypts with
 greevils_cli/deploy.py  launch the CS TDX VM at a digest (gcloud, fully local)
+greevils_cli/commit.py  build/sign/verify the on-chain Hyperliquid ownership commitment
 ```

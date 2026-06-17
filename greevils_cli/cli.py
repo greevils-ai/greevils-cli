@@ -6,9 +6,12 @@
   greevils list                                    # all submissions (spot your own by name)
   greevils status <id>                             # one submission's status + image digest
   greevils deploy <id> --agent-key K --master-account 0x...   # launch the CS TDX VM
+  greevils commit --hl-address 0x... --signature 0x...        # claim a Hyperliquid account on-chain
 
 encrypt + deploy are fully local (the API never sees plaintext or your key). submit/list/
 status just talk to the greevils-api backend (--api or GREEVILS_API, default https://api.greevils.ai).
+commit writes a Bittensor on-chain commitment that the validator reads -- it talks to the
+subtensor chain, not the API.
 """
 import argparse
 import json
@@ -201,6 +204,57 @@ def cmd_deploy(args: argparse.Namespace) -> None:
                   file=sys.stderr)
 
 
+def cmd_commit(args: argparse.Namespace) -> None:
+    """Publish an on-chain Hyperliquid ownership commitment for this hotkey.
+
+    This is the miner's entire job: register a neuron, then run this once to claim the
+    Hyperliquid account (agent or normal trading account) the validator should score you on.
+    """
+    from . import commit as commitlib
+
+    try:
+        import bittensor as bt
+    except ImportError:
+        raise SystemExit("bittensor is required for `commit` -- run `pip install -e .` in greevils-cli")
+
+    wallet = bt.Wallet(name=args.wallet_name, hotkey=args.hotkey)
+    hotkey_ss58 = wallet.hotkey.ss58_address
+
+    # Build the {address, message, signature} triple from the signature the miner produced
+    # in the web UI (we never handle the Hyperliquid account key).
+    if not (args.hl_address and args.signature):
+        raise SystemExit(
+            "provide both --hl-address and --signature (the signature you produced in the web UI)"
+        )
+    hl_address = args.hl_address
+    message = args.message or commitlib.canonical_message(hotkey_ss58, hl_address)
+    signature = commitlib._normalize_sig_hex(args.signature)
+
+    # Self-verify exactly as the validator will, before paying for the extrinsic.
+    ok, reason = commitlib.verify_commitment(hotkey_ss58, hl_address, message, signature)
+    if not ok:
+        raise SystemExit(f"refusing to commit -- {reason}")
+
+    data = commitlib.encode_commitment(hl_address, message, signature)
+    print(f"hotkey:        {hotkey_ss58}")
+    print(f"hl_address:    {hl_address}")
+    print(f"commitment:    {data}  ({len(data.encode())} bytes)")
+    if args.dry_run:
+        print("dry-run: nothing written on-chain")
+        return
+
+    subtensor = bt.Subtensor(network=args.network)
+    resp = subtensor.set_commitment(wallet=wallet, netuid=args.netuid, data=data)
+    success = getattr(resp, "is_success", None)
+    if success is None:
+        success = bool(resp)
+    if success:
+        print(f"committed on netuid {args.netuid} (network={args.network}). The validator will pick "
+              f"it up on its next round.")
+    else:
+        raise SystemExit(f"set_commitment did not succeed: {resp}")
+
+
 # ---- arg parsing ----------------------------------------------------------
 
 def build_parser() -> argparse.ArgumentParser:
@@ -254,6 +308,22 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--ita-api-key", help="Intel Trust Authority key (only for --token-backend ita)")
     p.add_argument("--ita-region", default="US")
     p.set_defaults(func=cmd_deploy)
+
+    p = sub.add_parser("commit", help="claim a Hyperliquid account on-chain (the miner's job)")
+    p.add_argument("--network", default=os.environ.get("NETWORK", "finney"),
+                   help="subtensor network: finney, test, local (default finney)")
+    p.add_argument("--netuid", type=int, default=int(os.environ.get("NETUID", "1")),
+                   help="subnet netuid (default 1)")
+    p.add_argument("--wallet-name", "--coldkey", default=os.environ.get("WALLET_NAME", "default"),
+                   help="coldkey / wallet name (default 'default')")
+    p.add_argument("--hotkey", default=os.environ.get("HOTKEY_NAME", "default"),
+                   help="hotkey name -- must be the neuron registered on the subnet (default 'default')")
+    p.add_argument("--hl-address", help="claimed Hyperliquid account address")
+    p.add_argument("--signature", help="EIP-191 personal_sign signature over --message (hex)")
+    p.add_argument("--message", help="message that was signed (default: the canonical message we build)")
+    p.add_argument("--dry-run", action="store_true",
+                   help="build + self-verify the commitment and print it, without writing on-chain")
+    p.set_defaults(func=cmd_commit)
 
     return ap
 
