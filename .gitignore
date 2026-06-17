@@ -4,3 +4,5 @@ __pycache__/
 *.pyc
 agent.py.enc
 *.egg-info/
+
+approved.json

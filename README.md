@@ -94,6 +94,24 @@ validator evaluates you every round.
 > `commit` talks to the **subtensor chain**, not the greevils-api. It needs the `bittensor`
 > packages (already in this CLI's dependencies).
 
+### 6. Approve agent image digests (validators)
+
+A validator decides which agent image digests are eligible for **agent** rewards. Put the full
+approved set in a JSON file (an array of digest strings) and publish it for your hotkey:
+
+```bash
+cat approved.json        # ["sha256:abc...", "sha256:def..."]
+greevils approve approved.json
+```
+
+This does two things: (1) POSTs the canonical list + an **sr25519 signature** (proving you own
+the hotkey) to greevils-api, which stores it under your hotkey; and (2) commits the list's hash
+on-chain as `gva1:<base64(sha256(list))>`. Validators take the **highest-staked validator-permit
+holder**, fetch its list from greevils-api, and use it only if the hash matches its on-chain
+commitment — so the off-chain host can't tamper with the list. The file is the **full** approved
+set and replaces your previous one; `--dry-run` skips the chain write. Anyone may publish, but
+only the top validator's commitment is honoured.
+
 ## Commands
 | Command | What it does | Talks to API? |
 |---|---|---|
@@ -103,6 +121,7 @@ validator evaluates you every round.
 | `status <id> [--log]` | one submission's status + digest + IP | yes |
 | `deploy <id> …` | launch the CS TDX VM at the published digest, then report its IP | resolve digest + report IP |
 | `commit …` | claim a Hyperliquid account on-chain (the miner's job) | no (subtensor chain) |
+| `approve <file.json>` | publish your hotkey's approved agent digests (validators) | yes + subtensor chain |
 
 ## Layout
 ```
@@ -111,4 +130,5 @@ greevils_cli/cli.py     argparse commands (encrypt/submit/list/status/deploy) + 
 greevils_cli/crypto.py  agent encryption (Fernet) — same scheme the TEE harness decrypts with
 greevils_cli/deploy.py  launch the CS TDX VM at a digest (gcloud, fully local)
 greevils_cli/commit.py  build/sign/verify the on-chain Hyperliquid ownership commitment
+greevils_cli/approve.py canonicalize/hash the approved-digest list + build its commitment
 ```

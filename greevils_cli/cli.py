@@ -7,6 +7,7 @@
   greevils status <id>                             # one submission's status + image digest
   greevils deploy <id> --agent-key K --master-account 0x...   # launch the CS TDX VM
   greevils commit --hl-address 0x... --signature 0x...        # claim a Hyperliquid account on-chain
+  greevils approve approved.json                              # publish your hotkey's approved agent digests (JSON array file)
 
 encrypt + deploy are fully local (the API never sees plaintext or your key). submit/list/
 status just talk to the greevils-api backend (--api or GREEVILS_API, default https://api.greevils.ai).
@@ -255,6 +256,70 @@ def cmd_commit(args: argparse.Namespace) -> None:
         raise SystemExit(f"set_commitment did not succeed: {resp}")
 
 
+def _read_digests_file(path: str) -> list[str]:
+    """Read approved digests from `path` -- its content must be a JSON array of digest strings."""
+    try:
+        digests = json.loads(Path(path).read_text())
+    except FileNotFoundError:
+        raise SystemExit(f"no such file: {path}")
+    except json.JSONDecodeError as e:
+        raise SystemExit(f"{path}: not valid JSON ({e})")
+    if not isinstance(digests, list) or not all(isinstance(d, str) for d in digests):
+        raise SystemExit(f"{path}: expected a JSON array of image-digest strings")
+    return digests
+
+
+def cmd_approve(args: argparse.Namespace) -> None:
+    """Publish the set of approved agent image digests for your hotkey.
+
+    Two steps: (1) POST the list + an sr25519 signature to greevils-api (proving you own the
+    hotkey), then (2) commit the list's hash on-chain so validators can verify the published
+    list. The list is the FULL approved set -- it replaces whatever your hotkey had before.
+    """
+    from . import approve as approvelib
+
+    try:
+        import bittensor as bt
+    except ImportError:
+        raise SystemExit("bittensor is required for `approve` -- run `pip install -e .` in greevils-cli")
+
+    digests = _read_digests_file(args.file)
+    if not digests:
+        raise SystemExit(f"{args.file} is an empty list -- nothing to approve")
+
+    wallet = bt.Wallet(name=args.wallet_name, hotkey=args.hotkey)
+    hotkey_ss58 = wallet.hotkey.ss58_address
+
+    canonical = approvelib.canonical_digests(digests)
+    message = approvelib.approval_message(hotkey_ss58, approvelib.list_hash_b64(canonical))
+    signature = "0x" + wallet.hotkey.sign(message.encode()).hex()
+
+    # 1. Publish the list to greevils-api (it verifies the signature before storing).
+    resp = requests.post(f"{args.api}/approved/{hotkey_ss58}",
+                         json={"digests": canonical, "signature": signature}, timeout=30)
+    if not resp.ok:
+        raise SystemExit(f"greevils-api rejected the list ({resp.status_code}): {resp.text}")
+    print(f"published {len(canonical)} approved digest(s) for {hotkey_ss58}")
+
+    # 2. Commit the list's hash on-chain so validators can verify the published list.
+    data = approvelib.encode_commitment(canonical)
+    print(f"commitment:    {data}  ({len(data.encode())} bytes)")
+    if args.dry_run:
+        print("dry-run: nothing written on-chain")
+        return
+
+    subtensor = bt.Subtensor(network=args.network)
+    r = subtensor.set_commitment(wallet=wallet, netuid=args.netuid, data=data)
+    success = getattr(r, "is_success", None)
+    if success is None:
+        success = bool(r)
+    if success:
+        print(f"committed approval hash on netuid {args.netuid} (network={args.network}). The "
+              f"validator honours it only if your hotkey is the highest-staked validator.")
+    else:
+        raise SystemExit(f"set_commitment did not succeed: {r}")
+
+
 # ---- arg parsing ----------------------------------------------------------
 
 def build_parser() -> argparse.ArgumentParser:
@@ -323,6 +388,24 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--dry-run", action="store_true",
                    help="build + self-verify the commitment and print it, without writing on-chain")
     p.set_defaults(func=cmd_commit)
+
+    p = sub.add_parser("approve",
+                       help="publish your hotkey's approved agent image digests (validator approval)")
+    p.add_argument("file",
+                   help="path to a JSON file: an array of image digests -- the FULL approved set "
+                        "(replaces your previous list)")
+    add_api(p)
+    p.add_argument("--network", default=os.environ.get("NETWORK", "finney"),
+                   help="subtensor network: finney, test, local (default finney)")
+    p.add_argument("--netuid", type=int, default=int(os.environ.get("NETUID", "1")),
+                   help="subnet netuid (default 1)")
+    p.add_argument("--wallet-name", "--coldkey", default=os.environ.get("WALLET_NAME", "default"),
+                   help="coldkey / wallet name (default 'default')")
+    p.add_argument("--hotkey", default=os.environ.get("HOTKEY_NAME", "default"),
+                   help="hotkey name whose approved list to publish (default 'default')")
+    p.add_argument("--dry-run", action="store_true",
+                   help="publish to the API + print the commitment, without writing on-chain")
+    p.set_defaults(func=cmd_approve)
 
     return ap
 
