@@ -78,6 +78,13 @@ def cmd_encrypt(args: argparse.Namespace) -> None:
 def cmd_submit(args: argparse.Namespace) -> None:
     enc = Path(args.enc)
     files = {"agent": (enc.name, enc.read_bytes(), "application/octet-stream")}
+    # Optional extra pip deps, baked into the image at build time. Plaintext (not secret),
+    # so it's a normal file upload alongside the ciphertext.
+    if args.requirements:
+        req = Path(args.requirements)
+        if not req.exists():
+            raise SystemExit(f"no such requirements file: {req}")
+        files["requirements"] = (req.name, req.read_bytes(), "text/plain")
     r = requests.post(f"{args.api}/submissions", files=files, data={"name": args.name}, timeout=60)
     r.raise_for_status()
     j = r.json()
@@ -158,8 +165,36 @@ def _report_ip(api: str, sid: str, ip: str, token: str | None) -> None:
     print(f"reported public IP {ip} for submission {sid} (status -> DEPLOYED)")
 
 
+def _parse_env_file(path: str) -> dict[str, str]:
+    """Parse a .env-style file into {NAME: value}. Blank lines and `#` comments are ignored;
+    each remaining line is `KEY=VALUE` (a leading `export ` is allowed, surrounding quotes on
+    the value are stripped). Values are taken verbatim otherwise -- no shell expansion."""
+    p = Path(path)
+    if not p.exists():
+        raise SystemExit(f"no such env file: {path}")
+    env: dict[str, str] = {}
+    for lineno, raw in enumerate(p.read_text().splitlines(), 1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[len("export "):].lstrip()
+        if "=" not in line:
+            raise SystemExit(f"{path}:{lineno}: expected KEY=VALUE, got {raw!r}")
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if not key:
+            raise SystemExit(f"{path}:{lineno}: empty variable name")
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        env[key] = value
+    return env
+
+
 def cmd_deploy(args: argparse.Namespace) -> None:
     image_ref, image_digest = args.image_ref, args.digest
+    agent_env = _parse_env_file(args.env_file) if args.env_file else None
     # Resolve image_ref/digest from a published submission unless given explicitly. PUBLISHED is
     # the first deploy; STALE means a prior deployment stopped answering, so re-deploying it (a
     # fresh VM from the same image) is allowed too.
@@ -190,6 +225,7 @@ def cmd_deploy(args: argparse.Namespace) -> None:
         token_backend=args.token_backend,
         ita_api_key=args.ita_api_key or os.environ.get("ITA_API_KEY"),
         ita_region=args.ita_region,
+        agent_env=agent_env,
     )
 
     # Report the VM's public IP back to the API (only when deploying a known submission).
@@ -339,6 +375,9 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("submit", help="upload an encrypted agent to greevils-api")
     p.add_argument("enc", help="path to agent.py.enc (from `greevils encrypt`)")
     p.add_argument("--name", required=True, help="a name for your agent submission")
+    p.add_argument("--requirements", metavar="PATH",
+                   help="optional requirements.txt of extra pip packages to bake into the "
+                        "image (plaintext -- not encrypted)")
     add_api(p)
     p.set_defaults(func=cmd_submit)
 
@@ -360,6 +399,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--digest", help="override: image digest (instead of resolving from <id>)")
     p.add_argument("--agent-key", help="AGENT_KEY (default: $AGENT_KEY)")
     p.add_argument("--master-account", help="0x... where funds return (default: $MASTER_ACCOUNT)")
+    p.add_argument("--env-file", metavar="PATH",
+                   help="a .env-style file (KEY=VALUE per line) of env vars to pass to your "
+                        "agent inside the TEE, e.g. API keys. Stays in your own VM metadata.")
     p.add_argument("--token", help="submission token for IP report (default: $GREEVILS_TOKEN or local store)")
     p.add_argument("--project", default=os.environ.get("GREEVILS_GCP_PROJECT", "calcium-arcadia-464813-j4"),
                    help="your GCP project (where the VM runs)")

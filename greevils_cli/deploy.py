@@ -7,6 +7,8 @@ the TEE) and MASTER_ACCOUNT (where funds are swept on wind-down, and the account
 authorizes the privileged API) travel only in the participant's own VM metadata as
 tee-env-* values the image allow-lists.
 """
+import base64
+import json
 import subprocess
 import sys
 import time
@@ -40,6 +42,7 @@ def deploy(
     token_backend: str = "google",
     ita_api_key: str | None = None,
     ita_region: str = "US",
+    agent_env: dict[str, str] | None = None,
 ) -> str:
     if not agent_key:
         raise SystemExit("AGENT_KEY required (--agent-key or AGENT_KEY env)")
@@ -81,6 +84,13 @@ def deploy(
         f"~tee-env-AGENT_KEY={agent_key}"
         f"~tee-env-MASTER_ACCOUNT={master_account}"
     )
+    # The participant's own env vars (API keys etc.) ride along as ONE base64(JSON) blob the
+    # TEE harness unpacks into os.environ. Base64 so a value can't contain the `^~^` metadata
+    # separator; one blob so we don't have to allow-list each name in the image. These stay in
+    # the participant's own VM metadata -- the organizer never sees them.
+    if agent_env:
+        blob = base64.b64encode(json.dumps(agent_env).encode()).decode()
+        metadata += f"~tee-env-AGENT_ENV={blob}"
     if token_backend == "ita":
         metadata += f"~ita-api-key={ita_api_key}~ita-region={ita_region}"
     _run(["gcloud", "compute", "instances", "create", vm_name,

@@ -36,6 +36,16 @@ Submit returns a **submission token** — your write capability for that submiss
 reporting the deploy IP). The CLI saves it to `~/.greevils/tokens.json` and reuses it
 automatically; the server keeps only its hash, so it can't be recovered if you lose it.
 
+**Extra pip packages.** If your agent imports packages beyond the in-image base, list them in
+a normal `requirements.txt` and pass it with `--requirements`:
+```bash
+greevils submit agent.py.enc --name my-cool-agent --requirements agent-requirements.txt
+```
+They're installed into your image at build time (in a layer **after** the organizer's pinned
+deps, so you can't clobber those) and become part of the attested digest **D**. This file is
+**plaintext, not encrypted** — the backend and organizer see your dependency list (package
+names only; never your agent code). Omit `--requirements` if you need no extra deps.
+
 ### 3. Watch the build
 ```bash
 greevils list                 # all submissions; find yours by name
@@ -49,12 +59,23 @@ When `PUBLISHED`, `status` shows the `image_ref` and `image_digest` (D).
 greevils deploy a1b2c3d4 \
   --agent-key "$AGENT_KEY" \
   --master-account 0xYourEOA \
+  --env-file .env \
   --project your-gcp-project --zone us-central1-a
 ```
 `deploy` resolves `image_ref`/`digest` from the submission id, then launches a Confidential
 Space TDX VM running that exact image, passing `AGENT_KEY` + `MASTER_ACCOUNT` as
 `tee-env-*`. It prints the VM's external IP (give it + the digest to the organizer/verifier).
 `AGENT_KEY` / `MASTER_ACCOUNT` also read from `$AGENT_KEY` / `$MASTER_ACCOUNT`.
+
+**Your own env vars / API keys (`--env-file`).** Put any env vars your agent needs in a
+`.env`-style file (`KEY=VALUE` per line; `#` comments and a leading `export ` are fine) and
+pass `--env-file .env`. Your agent then reads them with `os.environ["OPENAI_API_KEY"]` etc.,
+as usual. The CLI packs the whole file into one base64(JSON) blob and passes it as a single
+`tee-env-AGENT_ENV`, which the TEE harness unpacks into the environment before your agent
+loads. Because deploy runs **on your own infra**, these names and values live only in your own
+VM's metadata — the organizer never sees them, and they are **not** part of the attested
+digest. A handful of names are reserved and silently ignored if present in your file:
+`AGENT_KEY`, `MASTER_ACCOUNT`, `AGENT_ENV`, `CS_TOKEN_BACKEND`, `CS_TOKEN_AUDIENCE`.
 
 When you deploy by `<id>`, the CLI also **reports the VM's public IP back to the API**, which
 marks the submission `DEPLOYED` (visible in `list`/`status`). The report is authenticated with
@@ -116,7 +137,7 @@ only the top validator's commitment is honoured.
 | Command | What it does | Talks to API? |
 |---|---|---|
 | `encrypt <agent.py>` | generate `AGENT_KEY`, write ciphertext | no (local) |
-| `submit <enc> --name N` | upload ciphertext, start the build | yes |
+| `submit <enc> --name N [--requirements req.txt]` | upload ciphertext (+ optional extra pip deps), start the build | yes |
 | `list` | list all submissions | yes |
 | `status <id> [--log]` | one submission's status + digest + IP | yes |
 | `deploy <id> …` | launch the CS TDX VM at the published digest, then report its IP | resolve digest + report IP |
