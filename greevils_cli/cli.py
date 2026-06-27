@@ -7,6 +7,7 @@
   greevils status <id>                             # one submission's status + image digest
   greevils deploy <id> --agent-key K --master-account 0x...   # launch the CS TDX VM
   greevils commit --hl-address 0x... --signature 0x...        # claim a Hyperliquid account on-chain
+  greevils verify --hl-address 0x... --signature 0x...        # locally verify a commitment (no on-chain write)
   greevils approve approved.json                              # publish your hotkey's approved agent digests (JSON array file)
 
 encrypt + deploy are fully local (the API never sees plaintext or your key). submit/list/
@@ -312,6 +313,37 @@ def cmd_commit(args: argparse.Namespace) -> None:
         raise SystemExit(f"set_commitment did not succeed: {resp}")
 
 
+def cmd_verify(args: argparse.Namespace) -> None:
+    """Verify a Hyperliquid ownership commitment locally -- exactly the check the validator runs.
+
+    Pure and offline: rebuilds the canonical message from (hotkey, hl_address) and checks the
+    signature recovers to hl_address. Nothing is encoded or written on-chain. The hotkey can be
+    given directly with --hotkey-ss58, or derived from a local Bittensor wallet.
+    """
+    from . import commit as commitlib
+
+    if not (args.hl_address and args.signature):
+        raise SystemExit("provide both --hl-address and --signature")
+
+    hotkey_ss58 = args.hotkey_ss58
+    if not hotkey_ss58:
+        try:
+            import bittensor as bt
+        except ImportError:
+            raise SystemExit("pass --hotkey-ss58, or install bittensor to derive it from a wallet "
+                             "(`pip install -e .` in greevils-cli)")
+        wallet = bt.Wallet(name=args.wallet_name, hotkey=args.hotkey)
+        hotkey_ss58 = wallet.hotkey.ss58_address
+
+    signature = commitlib._normalize_sig_hex(args.signature)
+    ok, reason = commitlib.verify_commitment(hotkey_ss58, args.hl_address, signature)
+    print(f"hotkey:     {hotkey_ss58}")
+    print(f"hl_address: {args.hl_address}")
+    if not ok:
+        raise SystemExit(f"verify:     FAIL -- {reason}")
+    print("verify:     OK -- signature recovers to the claimed hl_address")
+
+
 def _read_digests_file(path: str) -> list[str]:
     """Read approved digests from `path` -- its content must be a JSON array of digest strings."""
     try:
@@ -454,6 +486,18 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--dry-run", action="store_true",
                    help="build + self-verify the commitment and print it, without writing on-chain")
     p.set_defaults(func=cmd_commit)
+
+    p = sub.add_parser("verify",
+                       help="locally verify a Hyperliquid ownership commitment (no on-chain write)")
+    p.add_argument("--hl-address", help="claimed Hyperliquid account address")
+    p.add_argument("--signature", help="EIP-191 personal_sign signature over the canonical message (hex)")
+    p.add_argument("--hotkey-ss58",
+                   help="hotkey ss58 to bind the message to (skips the wallet lookup -- no bittensor needed)")
+    p.add_argument("--wallet-name", "--coldkey", default=os.environ.get("WALLET_NAME", "default"),
+                   help="coldkey / wallet name, used only if --hotkey-ss58 is omitted (default 'default')")
+    p.add_argument("--hotkey", default=os.environ.get("HOTKEY_NAME", "default"),
+                   help="hotkey name, used only if --hotkey-ss58 is omitted (default 'default')")
+    p.set_defaults(func=cmd_verify)
 
     p = sub.add_parser("approve",
                        help="publish your hotkey's approved agent image digests (validator approval)")
