@@ -153,6 +153,9 @@ def cmd_status(args: argparse.Namespace) -> None:
         print(f"               error: {detail['error']}")
     print(f"image_ref:     {s.get('image_ref') or '-'}")
     print(f"image_digest:  {s.get('image_digest') or '-'}")
+    # Cached by the backend health monitor from the VM's harness (:8080); '-' until first healthy probe.
+    print(f"harness_hash:  {s.get('harness_hash') or '-'}")
+    print(f"agent_hash:    {s.get('agent_hash') or '-'}")
     print(f"public_ip:     {s.get('public_ip') or '-'}")
     print(f"agent_account: {s.get('agent_address') or '-'}")
     print(f"master_account:{s.get('master_account') or '-'}")
