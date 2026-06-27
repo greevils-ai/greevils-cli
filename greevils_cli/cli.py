@@ -22,7 +22,7 @@ from pathlib import Path
 
 import requests
 
-from .crypto import encrypt_agent
+from .crypto import encrypt_agent, package_dir
 from .deploy import deploy
 
 DEFAULT_API = os.environ.get("GREEVILS_API", "https://api.greevils.ai")
@@ -75,16 +75,32 @@ def cmd_encrypt(args: argparse.Namespace) -> None:
     print(f"AGENT_KEY={key}")  # secret -- save it; you pass it at deploy and it's the decrypt key
 
 
+def cmd_package(args: argparse.Namespace) -> None:
+    """Zip + encrypt an agent DIRECTORY (multi-file) into a submittable bundle.
+
+    The directory MUST contain `entry.py` (the fixed entrypoint, run as `python entry.py` inside
+    the TEE) and SHOULD contain `requirements.txt` (your pip deps, installed at runtime). Prints
+    the AGENT_KEY (the decrypt key you pass at deploy) and the agent's SHA-256 -- the harness
+    publishes the same hash at GET /agent, so you can confirm exactly which code is running.
+    """
+    src = Path(args.dir)
+    if not src.is_dir():
+        raise SystemExit(f"not a directory: {src}")
+    if not (src / "entry.py").exists():
+        raise SystemExit(f"{src}/entry.py not found -- it is the required entrypoint")
+    if not (src / "requirements.txt").exists():
+        print(f"warning: {src}/requirements.txt not found -- no dependencies will be installed",
+              file=sys.stderr)
+    token, key, sha256 = package_dir(str(src), args.key)
+    Path(args.out).write_bytes(token)
+    print(f"wrote {args.out} ({len(token)} bytes ciphertext)", file=sys.stderr)
+    print(f"AGENT_KEY={key}")          # secret -- save it; needed to deploy/redeploy
+    print(f"AGENT_SHA256={sha256}")    # the agent identity the harness will publish at GET /agent
+
+
 def cmd_submit(args: argparse.Namespace) -> None:
     enc = Path(args.enc)
     files = {"agent": (enc.name, enc.read_bytes(), "application/octet-stream")}
-    # Optional extra pip deps, baked into the image at build time. Plaintext (not secret),
-    # so it's a normal file upload alongside the ciphertext.
-    if args.requirements:
-        req = Path(args.requirements)
-        if not req.exists():
-            raise SystemExit(f"no such requirements file: {req}")
-        files["requirements"] = (req.name, req.read_bytes(), "text/plain")
     r = requests.post(f"{args.api}/submissions", files=files, data={"name": args.name}, timeout=60)
     r.raise_for_status()
     j = r.json()
@@ -366,18 +382,22 @@ def build_parser() -> argparse.ArgumentParser:
     def add_api(p: argparse.ArgumentParser) -> None:
         p.add_argument("--api", default=DEFAULT_API, help=f"greevils-api base URL (default {DEFAULT_API})")
 
-    p = sub.add_parser("encrypt", help="encrypt agent.py -> ciphertext + AGENT_KEY")
+    p = sub.add_parser("package",
+                       help="zip + encrypt a multi-file agent DIRECTORY -> bundle + AGENT_KEY")
+    p.add_argument("dir", help="path to your agent directory (must contain entry.py)")
+    p.add_argument("-o", "--out", default="agent-bundle.enc", help="output bundle ciphertext path")
+    p.add_argument("--key", help="reuse an existing AGENT_KEY (else a fresh one is generated)")
+    p.set_defaults(func=cmd_package)
+
+    p = sub.add_parser("encrypt", help="(legacy) encrypt a single agent.py -> ciphertext + AGENT_KEY")
     p.add_argument("agent", help="path to your plaintext agent.py")
     p.add_argument("-o", "--out", default="agent.py.enc", help="output ciphertext path")
     p.add_argument("--key", help="reuse an existing AGENT_KEY (else a fresh one is generated)")
     p.set_defaults(func=cmd_encrypt)
 
-    p = sub.add_parser("submit", help="upload an encrypted agent to greevils-api")
-    p.add_argument("enc", help="path to agent.py.enc (from `greevils encrypt`)")
+    p = sub.add_parser("submit", help="upload an encrypted agent bundle to greevils-api")
+    p.add_argument("enc", help="path to agent-bundle.enc (from `greevils package`)")
     p.add_argument("--name", required=True, help="a name for your agent submission")
-    p.add_argument("--requirements", metavar="PATH",
-                   help="optional requirements.txt of extra pip packages to bake into the "
-                        "image (plaintext -- not encrypted)")
     add_api(p)
     p.set_defaults(func=cmd_submit)
 

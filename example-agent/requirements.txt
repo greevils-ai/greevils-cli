@@ -1,0 +1,4 @@
+# Your agent's pip dependencies -- installed inside the TEE at startup (pip --user) before
+# entry.py runs. Pin versions (or hashes) for reproducibility. The base image already ships
+# hyperliquid-python-sdk + requests, so this is a no-op here; listed to show the mechanism.
+hyperliquid-python-sdk==0.24.0

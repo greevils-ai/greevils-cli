@@ -1,7 +1,7 @@
 # greevils-cli
 
-The participant's CLI. **Everything the participant does runs through this** — encrypt,
-submit, check status, deploy. The participant never touches the web. `encrypt` and `deploy`
+The participant's CLI. **Everything the participant does runs through this** — package,
+submit, check status, deploy. The participant never touches the web. `package` and `deploy`
 are fully local (the backend never sees plaintext or your `AGENT_KEY`); `submit` / `list` /
 `status` talk to [greevils-api](../greevils-api/).
 
@@ -18,17 +18,23 @@ Point it at the backend with `--api` or `GREEVILS_API` (default `http://localhos
 
 ## The full workflow
 
-### 1. Write your agent, then encrypt it
+### 1. Build your agent directory, then package it
+Your agent is a **directory** that MUST contain `entry.py` (the fixed entrypoint, run as
+`python entry.py` inside the TEE) and SHOULD contain `requirements.txt` (your pip deps). Lay out
+the rest however you like. Your code trades by making plain HTTP calls to the harness at
+`$GREEVILS_AGENT_URL` (`http://127.0.0.1:8081`) — no SDK to import. See
+[example-agent/](example-agent/).
 ```bash
-greevils encrypt my_agent.py -o agent.py.enc      # prints AGENT_KEY=...  — SAVE IT
+greevils package ./my-agent -o agent-bundle.enc   # prints AGENT_KEY=... and AGENT_SHA256=...
 ```
 `AGENT_KEY` is symmetric: it encrypts now and decrypts inside the TEE at deploy. **Save it
-safely** — without it you can't deploy or redeploy, and it's never recoverable from the
-backend (the backend only ever holds the ciphertext).
+safely** — without it you can't deploy or redeploy, and it's never recoverable from the backend
+(the backend only ever holds the ciphertext). `AGENT_SHA256` is the agent identity the harness
+publishes at `GET /agent`, so you can confirm exactly which code is running.
 
-### 2. Submit the ciphertext (names your agent, stores it, triggers the build)
+### 2. Submit the bundle (names your agent, stores it, triggers the build)
 ```bash
-greevils submit agent.py.enc --name my-cool-agent
+greevils submit agent-bundle.enc --name my-cool-agent
 # submitted: id=a1b2c3d4  name=my-cool-agent  status=QUEUED
 # token:     <secret>   (saved to ~/.greevils/tokens.json — keep a copy)
 ```
@@ -36,15 +42,11 @@ Submit returns a **submission token** — your write capability for that submiss
 reporting the deploy IP). The CLI saves it to `~/.greevils/tokens.json` and reuses it
 automatically; the server keeps only its hash, so it can't be recovered if you lose it.
 
-**Extra pip packages.** If your agent imports packages beyond the in-image base, list them in
-a normal `requirements.txt` and pass it with `--requirements`:
-```bash
-greevils submit agent.py.enc --name my-cool-agent --requirements agent-requirements.txt
-```
-They're installed into your image at build time (in a layer **after** the organizer's pinned
-deps, so you can't clobber those) and become part of the attested digest **D**. This file is
-**plaintext, not encrypted** — the backend and organizer see your dependency list (package
-names only; never your agent code). Omit `--requirements` if you need no extra deps.
+**Pip packages.** Put a `requirements.txt` **inside your agent directory** (so it's encrypted in
+the bundle — the organizer never sees it). The agent process pip-installs it at runtime inside
+the TEE, before `entry.py` runs. Because it's installed from PyPI at runtime, it is **not** part
+of digest **D** (only the requirements.txt text is, via the agent hash); pin versions/hashes if
+you need reproducible installs, and prefer wheels (the slim base has no compiler).
 
 ### 3. Watch the build
 ```bash
@@ -136,8 +138,8 @@ only the top validator's commitment is honoured.
 ## Commands
 | Command | What it does | Talks to API? |
 |---|---|---|
-| `encrypt <agent.py>` | generate `AGENT_KEY`, write ciphertext | no (local) |
-| `submit <enc> --name N [--requirements req.txt]` | upload ciphertext (+ optional extra pip deps), start the build | yes |
+| `package <dir>` | zip + encrypt an agent dir (needs `entry.py`) → `agent-bundle.enc` + `AGENT_KEY` + `AGENT_SHA256` | no (local) |
+| `submit <enc> --name N` | upload the encrypted bundle, start the build | yes |
 | `list` | list all submissions | yes |
 | `status <id> [--log]` | one submission's status + digest + IP | yes |
 | `deploy <id> …` | launch the CS TDX VM at the published digest, then report its IP | resolve digest + report IP |
@@ -147,8 +149,8 @@ only the top validator's commitment is honoured.
 ## Layout
 ```
 pyproject.toml          packaging + the `greevils` console-script entry point
-greevils_cli/cli.py     argparse commands (encrypt/submit/list/status/deploy) + main()
-greevils_cli/crypto.py  agent encryption (Fernet) — same scheme the TEE harness decrypts with
+greevils_cli/cli.py     argparse commands (package/submit/list/status/deploy) + main()
+greevils_cli/crypto.py  agent bundle zip + encryption (Fernet) — same scheme the TEE harness decrypts with
 greevils_cli/deploy.py  launch the CS TDX VM at a digest (gcloud, fully local)
 greevils_cli/commit.py  build/sign/verify the on-chain Hyperliquid ownership commitment
 greevils_cli/approve.py canonicalize/hash the approved-digest list + build its commitment
