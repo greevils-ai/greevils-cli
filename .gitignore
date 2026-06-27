@@ -5,4 +5,5 @@ __pycache__/
 agent.py.enc
 *.egg-info/
 
+*.enc
 approved.json

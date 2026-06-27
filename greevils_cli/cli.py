@@ -137,7 +137,8 @@ def cmd_status(args: argparse.Namespace) -> None:
     s = r.json()
     print(f"id:            {s['id']}")
     print(f"name:          {s['name']}")
-    print(f"status:        {s['status']}")
+    status_display = "DEPLOYED (BOOTING)" if s['status'] == "DEPLOYED" else s['status']
+    print(f"status:        {status_display}")
     print(f"health:        {s.get('health') or '-'}"
           + (f"  (checked {s['health_checked_at']})" if s.get('health_checked_at') else ""))
     att = s.get("attestation") or "-"
