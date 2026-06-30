@@ -38,6 +38,10 @@ greevils submit agent-bundle.enc --name my-cool-agent
 # submitted: id=a1b2c3d4  name=my-cool-agent  status=QUEUED
 # token:     <secret>   (saved to ~/.greevils/tokens.json — keep a copy)
 ```
+Agent **names are unique** — if the name is already taken the submit is rejected and the CLI
+prints the reason (`submit failed: submission name '…' is already taken -- pick another`); just
+rerun with a different `--name`.
+
 Submit returns a **submission token** — your write capability for that submission (it gates
 reporting the deploy IP). The CLI saves it to `~/.greevils/tokens.json` and reuses it
 automatically; the server keeps only its hash, so it can't be recovered if you lose it.

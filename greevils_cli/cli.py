@@ -62,6 +62,15 @@ def _resolve_token(explicit: str | None, sid: str) -> str | None:
 
 # ---- commands -------------------------------------------------------------
 
+def _api_error(r: requests.Response) -> str:
+    """Readable message from a non-2xx API response (FastAPI puts the reason in `detail`)."""
+    try:
+        detail = r.json().get("detail")
+    except ValueError:
+        detail = None
+    return detail or r.text.strip() or f"HTTP {r.status_code} {r.reason}"
+
+
 def _short_ts(iso: str | None) -> str:
     """Trim an ISO timestamp to 'YYYY-MM-DD HH:MM:SS' for table display; '-' if unset."""
     if not iso:
@@ -104,7 +113,8 @@ def cmd_submit(args: argparse.Namespace) -> None:
     enc = Path(args.enc)
     files = {"agent": (enc.name, enc.read_bytes(), "application/octet-stream")}
     r = requests.post(f"{args.api}/submissions", files=files, data={"name": args.name}, timeout=60)
-    r.raise_for_status()
+    if not r.ok:
+        raise SystemExit(f"submit failed: {_api_error(r)}")
     j = r.json()
     _save_token(j["id"], j["token"])
     print(f"submitted: id={j['id']}  name={j['name']}  status={j['status']}")
