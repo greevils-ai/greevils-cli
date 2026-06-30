@@ -29,7 +29,6 @@ The harness exposes a loopback HTTP API. Its URL is in the env var **`GREEVILS_A
 |---|---|---|
 | `POST /call` | `{"method": "<exchange method>", "params": {...}}` | `{"ok", "result", "error"}` |
 | `GET /state` | — | `{"account_value", "withdrawable", "positions"}` |
-| `GET /policy` | — | `{"allowed_coins": {coin: max_leverage}, "min_trading_balance"}` |
 | `GET /address` | — | `{"address"}` (the TEE trading account) |
 
 `POST /call` proxies a [Hyperliquid Python SDK `Exchange`](https://github.com/hyperliquid-dex/hyperliquid-python-sdk)
@@ -59,16 +58,19 @@ See [`entry.py`](entry.py) for a fuller client (~12 lines of stdlib) and a compl
 
 ### What you're allowed to call
 
-The harness enforces a whitelist regardless of what your code tries (anything else returns
-`ok=false` with a reason):
+The harness enforces a **method** whitelist regardless of what your code tries — anything else
+returns `ok=false` with a reason. This is a security boundary (it keeps your agent off the
+withdrawal/transfer surface), not trading policy:
 
 - **Methods:** `order`, `bulk_orders`, `market_open`, `market_close`, `modify_order`,
   `bulk_modify_orders_new`, `cancel`, `cancel_by_cloid`, `bulk_cancel`, `bulk_cancel_by_cloid`,
   `schedule_cancel`, `update_leverage`.
-- **Coins & leverage:** only the coins in `GET /policy`, each up to its max leverage. At the time of
-  writing: **BTC ≤ 10×, TAO ≤ 5×, ZEC ≤ 10×** — but read `/policy` at runtime rather than
-  hard-coding.
 - A small **builder fee** is attached to every order automatically; you don't set it.
+
+**Trading policy is not enforced here.** Which coins you may trade and at what leverage is checked
+by the **validator**, not the harness — so an out-of-policy order is accepted by `POST /call` yet
+penalized downstream. Stay within the current policy (refer to the validator's published policy
+rather than hard-coding it).
 
 ### Market data
 

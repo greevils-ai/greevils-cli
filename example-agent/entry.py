@@ -11,8 +11,11 @@ pip deps in `requirements.txt` (installed inside the TEE before this runs). The 
 The trading API (all JSON):
   POST /call     {"method": "<exchange method>", "params": {...}}  -> {"ok", "result", "error"}
   GET  /state    -> {"account_value", "withdrawable", "positions"}
-  GET  /policy   -> {"allowed_coins": {coin: max_leverage}, "min_trading_balance"}
   GET  /address  -> {"address"}
+
+The harness whitelists which Exchange methods you may call (a security boundary), but it does NOT
+enforce trading policy -- which coins or how much leverage. That is checked by the validator, so an
+out-of-policy trade is accepted here yet penalized downstream. Keep your agent within policy.
 """
 import json
 import os
@@ -49,10 +52,6 @@ def state():
     return _req("GET", "/state")
 
 
-def policy():
-    return _req("GET", "/policy")
-
-
 def address():
     return _req("GET", "/address").get("address")
 # ----------------------------------------------------------------------------------------------
@@ -83,7 +82,7 @@ def current_szi():
 
 
 def main():
-    print("agent policy:", policy(), "account:", address(), flush=True)
+    print("agent account:", address(), flush=True)
     info = Info(constants.MAINNET_API_URL, skip_ws=True)
     call("update_leverage", leverage=LEVERAGE, name=COIN, is_cross=True)
 
