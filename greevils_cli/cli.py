@@ -23,6 +23,7 @@ from pathlib import Path
 
 import requests
 
+from . import __version__
 from .crypto import encrypt_agent, package_dir
 from .deploy import deploy
 
@@ -413,6 +414,7 @@ def cmd_approve(args: argparse.Namespace) -> None:
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="greevils", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     def add_api(p: argparse.ArgumentParser) -> None:
